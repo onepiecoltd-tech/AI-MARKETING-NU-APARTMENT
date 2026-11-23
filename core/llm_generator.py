@@ -94,7 +94,13 @@ class LLMContentGenerator:
             system="Bạn chỉ trả về JSON hợp lệ, không có text thừa, không có markdown code fence.",
             messages=[{"role": "user", "content": system_prompt}],
         )
-        return response.content[0].text if response.content else "{}"
+        # Một số model Claude (vd. có extended thinking) trả về nhiều block
+        # trong content (ThinkingBlock, TextBlock...) — phải lọc đúng block
+        # kiểu "text", không thể giả định content[0] luôn là text.
+        for block in response.content or []:
+            if getattr(block, "type", None) == "text":
+                return block.text
+        return "{}"
 
     def _call_llm(self, prompt: str) -> str:
         if self._provider == "openai":
