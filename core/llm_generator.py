@@ -85,14 +85,14 @@ class LLMContentGenerator:
 
     @retry_with_backoff(max_retries=4, base_delay=3.0, should_retry=is_rate_limit_or_transient)
     def _call_claude(self, system_prompt: str) -> str:
-        # SDK anthropic mới (>=2.x) đã bỏ `temperature` khỏi tham số có kiểu
-        # tường minh của messages.create(); API vẫn chấp nhận qua extra_body.
+        # Lưu ý: API Claude hiện tại (SDK anthropic >=2.x) KHÔNG còn nhận
+        # tham số `temperature` nữa (kể cả qua extra_body — trả lỗi 400
+        # "Extra inputs are not permitted"). Không truyền tham số này.
         response = self._client.messages.create(
             model=self._cfg.model_claude,
             max_tokens=2048,
             system="Bạn chỉ trả về JSON hợp lệ, không có text thừa, không có markdown code fence.",
             messages=[{"role": "user", "content": system_prompt}],
-            extra_body={"temperature": 0.7},
         )
         return response.content[0].text if response.content else "{}"
 
