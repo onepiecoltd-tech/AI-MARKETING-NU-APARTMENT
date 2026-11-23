@@ -21,6 +21,7 @@ from pathlib import Path
 from typing import Iterator, Optional
 
 from google.oauth2 import service_account
+from google.oauth2.credentials import Credentials as OAuthCredentials
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseDownload
 import io
@@ -52,14 +53,27 @@ def extract_drive_file_id(url_or_id: str) -> str:
     raise ValueError(f"Không trích xuất được Google Drive file ID từ: {url_or_id}")
 
 
-def _build_credentials(service_account_json: str):
-    """service_account_json có thể là nội dung JSON thô hoặc đường dẫn file."""
-    candidate_path = Path(service_account_json)
-    if candidate_path.exists():
-        info = json.loads(candidate_path.read_text(encoding="utf-8"))
-    else:
-        info = json.loads(service_account_json)
-    return service_account.Credentials.from_service_account_info(info, scopes=SCOPES)
+def _build_credentials(cfg: GoogleWorkspaceConfig):
+    """Dựng Google credentials từ GoogleWorkspaceConfig, ưu tiên Service Account
+    JSON nếu có (cfg.service_account_json là nội dung JSON thô hoặc đường dẫn
+    file), nếu không thì dùng OAuth Client + refresh token (cfg.oauth_*) —
+    xem docstring của GoogleWorkspaceConfig trong config/settings.py."""
+    if cfg.service_account_json:
+        candidate_path = Path(cfg.service_account_json)
+        if candidate_path.exists():
+            info = json.loads(candidate_path.read_text(encoding="utf-8"))
+        else:
+            info = json.loads(cfg.service_account_json)
+        return service_account.Credentials.from_service_account_info(info, scopes=SCOPES)
+
+    return OAuthCredentials(
+        token=None,
+        refresh_token=cfg.oauth_refresh_token,
+        token_uri="https://oauth2.googleapis.com/token",
+        client_id=cfg.oauth_client_id,
+        client_secret=cfg.oauth_client_secret,
+        scopes=SCOPES,
+    )
 
 
 class GoogleDriveHandler:
@@ -68,7 +82,7 @@ class GoogleDriveHandler:
     def __init__(self, workspace_cfg: GoogleWorkspaceConfig, pipeline_cfg: PipelineConfig):
         self._cfg = workspace_cfg
         self._pipeline_cfg = pipeline_cfg
-        creds = _build_credentials(workspace_cfg.service_account_json)
+        creds = _build_credentials(workspace_cfg)
         self._service = build("drive", "v3", credentials=creds, cache_discovery=False)
         self._pipeline_cfg.media_cache_dir.mkdir(parents=True, exist_ok=True)
 

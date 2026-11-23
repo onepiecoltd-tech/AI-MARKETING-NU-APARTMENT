@@ -38,6 +38,8 @@ ai-marketing-nu-apartment/
 │   ├── run_deploy_ads.py     # Entrypoint workflow lên Ad
 │   ├── run_weekly_report.py  # Entrypoint workflow báo cáo tuần
 │   └── run_organic_post.py   # Entrypoint workflow đăng organic
+├── scripts/
+│   └── get_google_refresh_token.py  # Chạy LOCAL 1 lần để lấy OAuth refresh token (thay thế Service Account key)
 ├── .env.example
 ├── requirements.txt
 └── README.md
@@ -53,9 +55,15 @@ Tạo 1 Google Sheet gồm 5 tab (xem chi tiết từng cột trong `core/gsheet
 
 ## 3. Cài đặt
 
-### Bước 1 — Chuẩn bị Service Account & chia sẻ quyền
-1. Tạo Service Account trên Google Cloud, bật Google Sheets API + Google Drive API.
-2. Share Google Sheet và thư mục Drive chứa media cho email của Service Account với quyền **Editor**.
+### Bước 1 — Xác thực Google Sheets/Drive & chia sẻ quyền
+Chọn 1 trong 2 cách (chi tiết ở `HUONG_DAN_SU_DUNG.md` mục 2.2):
+- **Service Account** (đơn giản nhất): tạo Service Account trên Google Cloud,
+  bật Google Sheets API + Google Drive API, tải key JSON, share Sheet/Drive
+  cho email service account quyền **Editor**.
+- **OAuth Client + refresh token** (dùng khi org GCP chặn tạo service account
+  key, ví dụ policy `iam.disableServiceAccountKeyCreation`): tạo OAuth Client
+  (Desktop app), chạy `python scripts/get_google_refresh_token.py` một lần để
+  lấy refresh token, rồi share Sheet/Drive cho chính tài khoản Google đó.
 
 ### Bước 2 — Cấu hình GitHub Secrets
 Vào **Repo → Settings → Secrets and variables → Actions**, thêm toàn bộ biến

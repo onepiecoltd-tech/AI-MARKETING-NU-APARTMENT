@@ -144,7 +144,7 @@ class GoogleSheetHandler:
         self.weekly_reports_tab = weekly_reports_tab
         self.content_queue_tab = content_queue_tab
         self.content_registry_tab = content_registry_tab
-        creds = _build_credentials(cfg.service_account_json)
+        creds = _build_credentials(cfg)
         self._service = build("sheets", "v4", credentials=creds, cache_discovery=False)
 
     # ---------------------------------------------------------------- utils

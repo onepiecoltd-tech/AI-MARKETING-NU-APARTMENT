@@ -39,10 +39,44 @@ def _get_env(key: str, default: Optional[str] = None, required: bool = False) ->
 
 @dataclass(frozen=True)
 class GoogleWorkspaceConfig:
-    service_account_json: str = field(
-        default_factory=lambda: _get_env("GCP_SERVICE_ACCOUNT_JSON", required=True)
-    )
+    """Xác thực Google Sheets/Drive API. Hỗ trợ 2 cách, chọn 1:
+
+    1. Service Account JSON key (GCP_SERVICE_ACCOUNT_JSON) — cách cũ, chỉ dùng
+       được nếu tổ chức GCP KHÔNG bật policy `iam.disableServiceAccountKeyCreation`.
+    2. OAuth Client (Desktop app) + refresh token (GOOGLE_OAUTH_CLIENT_ID /
+       GOOGLE_OAUTH_CLIENT_SECRET / GOOGLE_OAUTH_REFRESH_TOKEN) — cách dùng khi
+       org chặn tạo service account key. Lấy refresh token bằng cách chạy
+       `scripts/get_google_refresh_token.py` một lần duy nhất (xem HUONG_DAN_SU_DUNG.md).
+
+    Nếu cả 2 đều thiếu, raise lỗi rõ ràng ở __post_init__.
+    """
+
     sheet_id: str = field(default_factory=lambda: _get_env("GSHEET_ID", required=True))
+    service_account_json: str = field(
+        default_factory=lambda: _get_env("GCP_SERVICE_ACCOUNT_JSON", "")
+    )
+    oauth_client_id: str = field(
+        default_factory=lambda: _get_env("GOOGLE_OAUTH_CLIENT_ID", "")
+    )
+    oauth_client_secret: str = field(
+        default_factory=lambda: _get_env("GOOGLE_OAUTH_CLIENT_SECRET", "")
+    )
+    oauth_refresh_token: str = field(
+        default_factory=lambda: _get_env("GOOGLE_OAUTH_REFRESH_TOKEN", "")
+    )
+
+    def __post_init__(self) -> None:
+        has_service_account = bool(self.service_account_json)
+        has_oauth = bool(
+            self.oauth_client_id and self.oauth_client_secret and self.oauth_refresh_token
+        )
+        if not has_service_account and not has_oauth:
+            raise EnvironmentError(
+                "Thiếu cấu hình xác thực Google Workspace. Cấu hình MỘT trong hai: "
+                "(1) GCP_SERVICE_ACCOUNT_JSON, hoặc "
+                "(2) cả 3 biến GOOGLE_OAUTH_CLIENT_ID + GOOGLE_OAUTH_CLIENT_SECRET + "
+                "GOOGLE_OAUTH_REFRESH_TOKEN (xem HUONG_DAN_SU_DUNG.md mục lấy refresh token)."
+            )
 
 
 @dataclass(frozen=True)
@@ -83,11 +117,23 @@ class GoogleAdsConfig:
 class YouTubeConfig:
     """OAuth riêng cho đăng ORGANIC lên YouTube (platforms/organic/youtube_organic.py).
     Tách khỏi GoogleAdsConfig: job đăng organic KHÔNG cần GOOGLE_ADS_DEVELOPER_TOKEN
-    hay GOOGLE_ADS_CUSTOMER_ID — dùng chung Client ID/Secret của cùng Google
-    Cloud project là đủ, cộng với 1 refresh token riêng có scope youtube.upload."""
+    hay GOOGLE_ADS_CUSTOMER_ID.
 
-    client_id: str = field(default_factory=lambda: _get_env("GOOGLE_ADS_CLIENT_ID", required=True))
-    client_secret: str = field(default_factory=lambda: _get_env("GOOGLE_ADS_CLIENT_SECRET", required=True))
+    Dùng chung OAuth Client (GOOGLE_OAUTH_CLIENT_ID/SECRET — cùng client Desktop
+    app đã tạo cho GoogleWorkspaceConfig, vì cùng 1 Google Cloud project và đã
+    thêm sẵn scope youtube/youtube.upload khi cấu hình OAuth consent screen).
+    Nếu không có, fallback sang GOOGLE_ADS_CLIENT_ID/SECRET cho ai dùng chung
+    client của Google Ads. refresh_token LUÔN là biến riêng (YOUTUBE_REFRESH_TOKEN)
+    vì refresh token gắn với 1 tập scope cụ thể lúc cấp."""
+
+    client_id: str = field(
+        default_factory=lambda: _get_env("GOOGLE_OAUTH_CLIENT_ID")
+        or _get_env("GOOGLE_ADS_CLIENT_ID", required=True)
+    )
+    client_secret: str = field(
+        default_factory=lambda: _get_env("GOOGLE_OAUTH_CLIENT_SECRET")
+        or _get_env("GOOGLE_ADS_CLIENT_SECRET", required=True)
+    )
     refresh_token: str = field(default_factory=lambda: _get_env("YOUTUBE_REFRESH_TOKEN", required=True))
 
 

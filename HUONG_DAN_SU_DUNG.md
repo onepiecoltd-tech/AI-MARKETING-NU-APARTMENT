@@ -43,16 +43,47 @@ Week_Range | Platform | Topic_Group | Spend | Impressions | Clicks | CTR | CPC |
 
 Copy **Sheet ID** từ URL (`https://docs.google.com/spreadsheets/d/<SHEET_ID>/edit`) → dùng cho biến `GSHEET_ID`.
 
-### 2.2. Tạo Service Account
+### 2.2. Xác thực Google Sheets/Drive — chọn 1 trong 2 cách
+
+**Cách A — Service Account (đơn giản nhất, ưu tiên dùng nếu org GCP cho phép):**
 1. Vào [Google Cloud Console](https://console.cloud.google.com/) → tạo project mới (hoặc dùng project có sẵn).
-2. Bật 2 API: **Google Sheets API** và **Google Drive API** (và **YouTube Data API v3** nếu muốn tự động upload video Google Ads).
+2. Bật 2 API: **Google Sheets API** và **Google Drive API** (và **YouTube Data API v3** nếu muốn tự động upload video).
 3. Vào **IAM & Admin → Service Accounts → Create Service Account**.
 4. Sau khi tạo, vào tab **Keys → Add Key → Create new key → JSON** → tải file JSON về. Đây là giá trị cho biến `GCP_SERVICE_ACCOUNT_JSON`.
 5. Mở file JSON, copy địa chỉ email dạng `xxx@xxx.iam.gserviceaccount.com`.
+6. Chia sẻ quyền: mở Google Sheet vừa tạo → **Share** → dán email Service Account → quyền **Editor**; làm tương tự với thư mục Drive chứa ảnh/clip.
 
-### 2.3. Chia sẻ quyền
-- Mở Google Sheet vừa tạo → **Share** → dán email Service Account → chọn quyền **Editor**.
-- Mở thư mục Google Drive chứa ảnh/clip quảng cáo → **Share** → dán email Service Account → quyền **Editor**.
+**Cách B — OAuth Client + refresh token (dùng khi Cách A bị chặn):** một số tổ
+chức GCP bật policy bảo mật `iam.disableServiceAccountKeyCreation` khiến
+bước 4 ở trên báo lỗi "Service account key creation is disabled" và không tải
+được file JSON. Khi đó dùng cách này thay thế:
+
+1. Vào **Google Cloud Console → API & Services → OAuth consent screen**: tạo
+   consent screen loại **External**, điền App name + support email, ở bước
+   **Audience** thêm chính email Google của bạn vào **Test users** (bắt buộc
+   khi app ở chế độ Testing — chưa publish/verify).
+2. Ở bước **Data access**, bấm **Add or remove scopes**, thêm các scope:
+   `.../auth/spreadsheets`, `.../auth/drive`, `.../auth/youtube`,
+   `.../auth/youtube.upload` (2 scope YouTube chỉ cần nếu dùng đăng organic YouTube).
+3. Vào **APIs & Services → Credentials → Create Credentials → OAuth client ID**,
+   chọn **Application type = Desktop app**, đặt tên tùy ý → **Create** → bấm
+   **Download JSON**, lưu file này lại (ví dụ `client_secret.json`).
+4. Trên máy LOCAL của bạn (không chạy trên GitHub Actions), cài thư viện và
+   chạy script có sẵn trong repo:
+   ```bash
+   pip install google-auth-oauthlib google-auth google-api-python-client
+   python scripts/get_google_refresh_token.py --client-secret client_secret.json
+   ```
+   Trình duyệt tự mở để bạn đăng nhập Google & bấm **Allow** (đăng nhập đúng
+   tài khoản sở hữu Sheet/kênh YouTube, và tài khoản này phải nằm trong Test
+   users ở bước 1). Script in ra 4 giá trị: `GOOGLE_OAUTH_CLIENT_ID`,
+   `GOOGLE_OAUTH_CLIENT_SECRET`, `GOOGLE_OAUTH_REFRESH_TOKEN`,
+   `YOUTUBE_REFRESH_TOKEN` — copy vào GitHub Secrets (mục 4 bên dưới). Không
+   cần điền `GCP_SERVICE_ACCOUNT_JSON` nếu dùng cách này.
+5. Chia sẻ quyền: mở Google Sheet vừa tạo → **Share** → dán **chính email Google
+   bạn vừa đăng nhập ở bước 4** (không phải email service account, vì không có)
+   → quyền **Editor**; làm tương tự với thư mục Drive chứa ảnh/clip — vì tài
+   khoản đó đã sẵn là chủ sở hữu nên thường không cần share thêm.
 
 ---
 
@@ -95,7 +126,11 @@ Copy **Sheet ID** từ URL (`https://docs.google.com/spreadsheets/d/<SHEET_ID>/e
 Vào **repo này → Settings → Secrets and variables → Actions → New repository secret**, thêm từng biến sau (xem đầy đủ trong `.env.example`):
 
 ```
-GCP_SERVICE_ACCOUNT_JSON
+# Google Workspace — điền nhóm (A) HOẶC nhóm (B) ở mục 2.2, không cần cả 2:
+GCP_SERVICE_ACCOUNT_JSON        (cách A)
+GOOGLE_OAUTH_CLIENT_ID          (cách B)
+GOOGLE_OAUTH_CLIENT_SECRET      (cách B)
+GOOGLE_OAUTH_REFRESH_TOKEN      (cách B)
 GSHEET_ID
 LLM_PROVIDER
 LLM_API_KEY
@@ -110,12 +145,16 @@ GOOGLE_ADS_CLIENT_ID
 GOOGLE_ADS_CLIENT_SECRET
 GOOGLE_ADS_REFRESH_TOKEN
 GOOGLE_ADS_CUSTOMER_ID
-YOUTUBE_REFRESH_TOKEN     (tùy chọn)
+YOUTUBE_REFRESH_TOKEN     (tùy chọn — cần nếu dùng upload YouTube cho Ads hoặc đăng organic YouTube)
 TELEGRAM_BOT_TOKEN
 TELEGRAM_CHAT_ID
 ```
 
-**Lưu ý:** `GCP_SERVICE_ACCOUNT_JSON` dán **nguyên văn nội dung file JSON** (cả dấu `{}`), không phải đường dẫn file.
+**Lưu ý:**
+- `GCP_SERVICE_ACCOUNT_JSON` dán **nguyên văn nội dung file JSON** (cả dấu `{}`), không phải đường dẫn file.
+- Nếu dùng cách B (OAuth), 3 biến `GOOGLE_OAUTH_*` lấy từ output của lệnh
+  `python scripts/get_google_refresh_token.py` (xem mục 2.2) — KHÔNG điền
+  `GCP_SERVICE_ACCOUNT_JSON` trong trường hợp này.
 
 ---
 
@@ -178,8 +217,11 @@ Posted_Date | Row_ID | Topic_Group | Platform | Post_ID | Post_URL | Caption
 
 ### 6b.2. Đăng ký API cho từng nền tảng
 
-**YouTube**: dùng lại OAuth Client ID/Secret đã tạo ở mục 3.3 (Google Ads), chỉ cần
-đảm bảo `YOUTUBE_REFRESH_TOKEN` có scope `youtube.upload`.
+**YouTube**: dùng lại OAuth Client ID/Secret đã tạo ở mục 2.2 — cách A/B (ưu
+tiên `GOOGLE_OAUTH_CLIENT_ID/SECRET`, fallback `GOOGLE_ADS_CLIENT_ID/SECRET`
+nếu không set), chỉ cần đảm bảo `YOUTUBE_REFRESH_TOKEN` có scope `youtube`
+và `youtube.upload` (script `scripts/get_google_refresh_token.py` ở mục 2.2
+đã xin sẵn cả 2 scope này).
 
 **Facebook Page**:
 1. Trong app Meta for Developers đã tạo ở mục 3.1, thêm quyền `pages_manage_posts`, `pages_read_engagement`.

@@ -6,8 +6,9 @@ platforms/organic/youtube_organic.py
 làm asset cho Google Ads). Ở đây video được đăng với privacyStatus theo cột
 Visibility của Content_Queue (PUBLIC/UNLISTED/PRIVATE).
 
-Dùng chung OAuth Client ID/Secret với Google Ads config (cùng 1 Google Cloud
-project) + YOUTUBE_REFRESH_TOKEN — xem HUONG_DAN_SU_DUNG.md mục đăng ký.
+Dùng chung OAuth Client ID/Secret với GoogleWorkspaceConfig (GOOGLE_OAUTH_CLIENT_ID/
+SECRET — cùng 1 Google Cloud project, fallback GOOGLE_ADS_CLIENT_ID/SECRET nếu
+không có) + YOUTUBE_REFRESH_TOKEN riêng — xem HUONG_DAN_SU_DUNG.md mục đăng ký.
 """
 
 from __future__ import annotations
