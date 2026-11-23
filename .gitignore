@@ -1,0 +1,20 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# Env & secrets — KHÔNG commit key thật
+.env
+*.env.local
+service_account*.json
+
+# Media tạm
+/tmp/
+media_cache/
+
+# OS / editor
+.DS_Store
+.vscode/
+.idea/
