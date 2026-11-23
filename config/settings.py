@@ -84,7 +84,7 @@ class LLMConfig:
     provider: str = field(default_factory=lambda: _get_env("LLM_PROVIDER", "openai"))
     api_key: str = field(default_factory=lambda: _get_env("LLM_API_KEY", required=True))
     model_openai: str = field(default_factory=lambda: _get_env("LLM_MODEL_OPENAI", "gpt-4o-mini"))
-    model_gemini: str = field(default_factory=lambda: _get_env("LLM_MODEL_GEMINI", "gemini-2.0-flash"))
+    model_gemini: str = field(default_factory=lambda: _get_env("LLM_MODEL_GEMINI", "gemini-3.8-flash"))
 
 
 @dataclass(frozen=True)
