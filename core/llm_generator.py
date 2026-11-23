@@ -52,8 +52,14 @@ class LLMContentGenerator:
 
             genai.configure(api_key=cfg.api_key)
             self._client = genai.GenerativeModel(cfg.model_gemini)
+        elif self._provider in ("claude", "anthropic"):
+            from anthropic import Anthropic  # import cục bộ để không bắt buộc cài cả 3 SDK
+
+            self._client = Anthropic(api_key=cfg.api_key)
         else:
-            raise ValueError(f"LLM_PROVIDER không hỗ trợ: {cfg.provider} (chỉ nhận 'openai' hoặc 'gemini')")
+            raise ValueError(
+                f"LLM_PROVIDER không hỗ trợ: {cfg.provider} (chỉ nhận 'openai', 'gemini' hoặc 'claude')"
+            )
 
     # ------------------------------------------------------------- calls
     @retry_with_backoff(max_retries=4, base_delay=3.0, should_retry=is_rate_limit_or_transient)
@@ -77,9 +83,24 @@ class LLMContentGenerator:
         )
         return response.text or "{}"
 
+    @retry_with_backoff(max_retries=4, base_delay=3.0, should_retry=is_rate_limit_or_transient)
+    def _call_claude(self, system_prompt: str) -> str:
+        # SDK anthropic mới (>=2.x) đã bỏ `temperature` khỏi tham số có kiểu
+        # tường minh của messages.create(); API vẫn chấp nhận qua extra_body.
+        response = self._client.messages.create(
+            model=self._cfg.model_claude,
+            max_tokens=2048,
+            system="Bạn chỉ trả về JSON hợp lệ, không có text thừa, không có markdown code fence.",
+            messages=[{"role": "user", "content": system_prompt}],
+            extra_body={"temperature": 0.7},
+        )
+        return response.content[0].text if response.content else "{}"
+
     def _call_llm(self, prompt: str) -> str:
         if self._provider == "openai":
             return self._call_openai(prompt)
+        if self._provider in ("claude", "anthropic"):
+            return self._call_claude(prompt)
         return self._call_gemini(prompt)
 
     # ---------------------------------------------------------- public API

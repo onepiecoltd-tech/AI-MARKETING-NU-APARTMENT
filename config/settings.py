@@ -85,6 +85,7 @@ class LLMConfig:
     api_key: str = field(default_factory=lambda: _get_env("LLM_API_KEY", required=True))
     model_openai: str = field(default_factory=lambda: _get_env("LLM_MODEL_OPENAI", "gpt-4o-mini"))
     model_gemini: str = field(default_factory=lambda: _get_env("LLM_MODEL_GEMINI", "gemini-3.8-flash"))
+    model_claude: str = field(default_factory=lambda: _get_env("LLM_MODEL_CLAUDE", "claude-sonnet-5"))
 
 
 @dataclass(frozen=True)

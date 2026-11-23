@@ -114,10 +114,12 @@ bước 4 ở trên báo lỗi "Service account key creation is disabled" và kh
 2. Thêm bot vào group/channel cần nhận báo cáo, hoặc chat trực tiếp với bot.
 3. Lấy **Chat ID**: mở `https://api.telegram.org/bot<TOKEN>/getUpdates` sau khi gửi 1 tin nhắn test, đọc field `chat.id`.
 
-### 3.5. LLM (OpenAI hoặc Gemini)
+### 3.5. LLM (OpenAI, Gemini, hoặc Claude)
 - OpenAI: lấy API Key tại platform.openai.com.
-- Gemini: lấy API Key tại Google AI Studio (aistudio.google.com).
-- Chỉ cần 1 trong 2 — khai báo qua biến `LLM_PROVIDER`.
+- Gemini: lấy API Key tại Google AI Studio (aistudio.google.com) — lưu ý gói Free Tier giới hạn khoảng 20 request/ngày, dễ hết quota khi test nhiều lần.
+- Claude (Anthropic): lấy API Key tại **console.anthropic.com** (mục API Keys) — **khác hoàn toàn** với gói Claude Pro/Max dùng để chat trên claude.ai, hai bên không dùng chung usage/billing. Tài khoản API mới thường có sẵn vài đô credit dùng thử.
+- Chỉ cần 1 trong 3 — khai báo qua biến `LLM_PROVIDER` (`openai` | `gemini` | `claude`).
+- Tuỳ chọn: đổi model qua `LLM_MODEL_OPENAI` / `LLM_MODEL_GEMINI` / `LLM_MODEL_CLAUDE` (mặc định lần lượt: `gpt-4o-mini`, `gemini-3.8-flash`, `claude-sonnet-5`).
 
 ---
 
