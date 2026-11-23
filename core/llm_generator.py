@@ -14,7 +14,7 @@ from datetime import datetime
 from typing import Any, Dict, List
 from urllib.parse import urlencode, urlparse, urlunparse, parse_qsl
 
-from config.prompts import build_content_prompt, build_report_analysis_prompt
+from config.prompts import build_content_prompt, build_organic_content_prompt, build_report_analysis_prompt
 from config.settings import LLMConfig
 from core.retry import is_rate_limit_or_transient, retry_with_backoff
 
@@ -29,6 +29,8 @@ _LIMITS = {
     "google.headlines": 30,
     "google.long_headline": 90,
     "google.descriptions": 90,
+    "organic.youtube_title": 100,
+    "organic.tiktok_caption": 150,
 }
 _VALID_CTAS = {"LEARN_MORE", "SHOP_NOW", "SIGN_UP"}
 
@@ -86,6 +88,16 @@ class LLMContentGenerator:
         raw_text = self._call_llm(prompt)
         data = self._parse_json_safely(raw_text)
         data = self._validate_and_trim(data, platforms)
+        return data
+
+    def generate_organic_content(self, topic_group: str, topic_prompt: str, platforms: List[str]) -> Dict[str, Any]:
+        """Sinh nội dung đăng ORGANIC (YouTube/Facebook/Instagram/TikTok) — khác
+        generate_ad_content() ở giọng văn tự nhiên + schema riêng (title/description/
+        tags cho YouTube, hashtags cho IG/TikTok), không có call_to_action/landing page."""
+        prompt = build_organic_content_prompt(topic_group, topic_prompt, platforms)
+        raw_text = self._call_llm(prompt)
+        data = self._parse_json_safely(raw_text)
+        data = self._validate_and_trim_organic(data, platforms)
         return data
 
     def generate_weekly_insight(self, metrics_table: List[Dict[str, Any]]) -> str:
@@ -149,11 +161,52 @@ class LLMContentGenerator:
 
         return result
 
+    def _validate_and_trim_organic(self, data: Dict[str, Any], platforms: List[str]) -> Dict[str, Any]:
+        result: Dict[str, Any] = {}
+
+        if "YOUTUBE" in platforms and "youtube" in data:
+            yt = data["youtube"]
+            result["youtube"] = {
+                "title": self._trim(str(yt.get("title", "")), _LIMITS["organic.youtube_title"]),
+                "description": str(yt.get("description", "")).strip(),
+                "tags": [str(t).strip() for t in yt.get("tags", []) if str(t).strip()][:15],
+            }
+
+        if "FACEBOOK" in platforms and "facebook" in data:
+            fb = data["facebook"]
+            result["facebook"] = {"caption": str(fb.get("caption", "")).strip()}
+
+        if "INSTAGRAM" in platforms and "instagram" in data:
+            ig = data["instagram"]
+            hashtags = [str(h).strip() for h in ig.get("hashtags", []) if str(h).strip()][:8]
+            result["instagram"] = {
+                "caption": str(ig.get("caption", "")).strip(),
+                "hashtags": hashtags,
+            }
+
+        if "TIKTOK" in platforms and "tiktok" in data:
+            tt = data["tiktok"]
+            hashtags = [str(h).strip() for h in tt.get("hashtags", []) if str(h).strip()][:8]
+            result["tiktok"] = {
+                "caption": self._trim(str(tt.get("caption", "")), _LIMITS["organic.tiktok_caption"]),
+                "hashtags": hashtags,
+            }
+
+        return result
+
 
 def build_ad_name(topic_group: str, row_id: str, created_date: datetime | None = None) -> str:
     """Quy ước đặt tên: [{Topic_Group}]_{YYYYMMDD}_{Row_ID}"""
     date_str = (created_date or datetime.utcnow()).strftime("%Y%m%d")
     return f"[{topic_group}]_{date_str}_{row_id}"
+
+
+def compose_caption(caption: str, hashtags: List[str]) -> str:
+    """Nối caption + hashtags thành 1 chuỗi để đăng (Instagram/TikTok)."""
+    tags = [h if h.startswith("#") else f"#{h}" for h in hashtags]
+    if not tags:
+        return caption
+    return f"{caption}\n\n{' '.join(tags)}"
 
 
 def build_utm_url(landing_page_url: str, platform: str, topic_group: str, row_id: str) -> str:

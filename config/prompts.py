@@ -67,6 +67,61 @@ def build_content_prompt(topic_group: str, topic_prompt: str, platforms: List[st
     )
 
 
+# ---------------------------------------------------------------------------
+# Organic content (đăng tự nhiên, KHÔNG qua Ads) — schema khác Ad content:
+# không có call_to_action/landing page bắt buộc, có title/description/tags
+# riêng cho YouTube, và hashtag cho Instagram/TikTok/Facebook.
+# ---------------------------------------------------------------------------
+ORGANIC_OUTPUT_SCHEMA_EXAMPLE: Dict[str, Any] = {
+    "youtube": {
+        "title": "<= 100 ký tự, hấp dẫn, có từ khóa chính",
+        "description": "mô tả video, có thể nhiều đoạn, nên có 1-2 hashtag ở cuối",
+        "tags": ["tag1", "tag2", "tag3"],
+    },
+    "facebook": {
+        "caption": "nội dung đăng lên Facebook Page, giọng văn tự nhiên gần gũi",
+    },
+    "instagram": {
+        "caption": "nội dung đăng Instagram, ngắn gọn, hook ở câu đầu",
+        "hashtags": ["#hashtag1", "#hashtag2", "#hashtag3"],
+    },
+    "tiktok": {
+        "caption": "<= 150 ký tự, giọng văn bắt trend TikTok",
+        "hashtags": ["#hashtag1", "#hashtag2", "#hashtag3"],
+    },
+}
+
+ORGANIC_SYSTEM_PROMPT_TEMPLATE = """Bạn là chuyên gia content đa nền tảng (YouTube, Facebook, Instagram, TikTok),
+chuyên viết nội dung ĐĂNG TỰ NHIÊN (organic, không phải quảng cáo trả tiền).
+Nhiệm vụ: sinh nội dung CHỈ cho các nền tảng được yêu cầu, dựa trên:
+- Nhóm chủ đề (Topic_Group): {topic_group}
+- Ý tưởng / nội dung muốn truyền tải (Topic_Prompt): {topic_prompt}
+- Các nền tảng cần sinh nội dung (Platforms): {platforms}
+
+QUY TẮC BẮT BUỘC:
+1. Chỉ trả về JSON hợp lệ, KHÔNG kèm giải thích, KHÔNG markdown code fence.
+2. Chỉ bao gồm các khóa nền tảng nằm trong danh sách Platforms được yêu cầu.
+3. Giọng văn TỰ NHIÊN, gần gũi, KHÔNG giống quảng cáo — đây là nội dung đăng
+   trên kênh/trang của chính mình, mục tiêu là tương tác và giữ chân người xem,
+   không phải chốt sale ngay như Ads.
+4. Giới hạn: YouTube title <= 100 ký tự; TikTok caption <= 150 ký tự;
+   Instagram/TikTok hashtags: 3-8 hashtag liên quan, không spam hashtag chung.
+5. Giữ nguyên ngôn ngữ của Topic_Prompt.
+
+Cấu trúc JSON đầu ra tham khảo (CHỈ là ví dụ cấu trúc, không copy nội dung mẫu):
+{schema_example}
+"""
+
+
+def build_organic_content_prompt(topic_group: str, topic_prompt: str, platforms: List[str]) -> str:
+    return ORGANIC_SYSTEM_PROMPT_TEMPLATE.format(
+        topic_group=topic_group,
+        topic_prompt=topic_prompt,
+        platforms=", ".join(p.strip().upper() for p in platforms),
+        schema_example=json.dumps(ORGANIC_OUTPUT_SCHEMA_EXAMPLE, ensure_ascii=False, indent=2),
+    )
+
+
 REPORT_ANALYSIS_PROMPT_TEMPLATE = """Bạn là chuyên gia phân tích hiệu suất quảng cáo đa nền tảng.
 Dưới đây là bảng số liệu hiệu suất 7 ngày gần nhất, đã gom theo Nhóm Chủ Đề (Topic_Group)
 và theo Nền Tảng (Platform):

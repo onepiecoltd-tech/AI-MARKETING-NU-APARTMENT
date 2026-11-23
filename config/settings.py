@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass, field
+from functools import cached_property
 from pathlib import Path
 from typing import Optional
 
@@ -79,9 +80,52 @@ class GoogleAdsConfig:
 
 
 @dataclass(frozen=True)
+class YouTubeConfig:
+    """OAuth riêng cho đăng ORGANIC lên YouTube (platforms/organic/youtube_organic.py).
+    Tách khỏi GoogleAdsConfig: job đăng organic KHÔNG cần GOOGLE_ADS_DEVELOPER_TOKEN
+    hay GOOGLE_ADS_CUSTOMER_ID — dùng chung Client ID/Secret của cùng Google
+    Cloud project là đủ, cộng với 1 refresh token riêng có scope youtube.upload."""
+
+    client_id: str = field(default_factory=lambda: _get_env("GOOGLE_ADS_CLIENT_ID", required=True))
+    client_secret: str = field(default_factory=lambda: _get_env("GOOGLE_ADS_CLIENT_SECRET", required=True))
+    refresh_token: str = field(default_factory=lambda: _get_env("YOUTUBE_REFRESH_TOKEN", required=True))
+
+
+@dataclass(frozen=True)
 class NotifierConfig:
     telegram_bot_token: str = field(default_factory=lambda: _get_env("TELEGRAM_BOT_TOKEN", ""))
     telegram_chat_id: str = field(default_factory=lambda: _get_env("TELEGRAM_CHAT_ID", ""))
+
+
+# ------------------------------------------------------------------------
+# Organic posting (không qua Ads) — Facebook Page, Instagram, TikTok Content
+# Posting API. Tách riêng khỏi MetaConfig/TikTokConfig (Ads) vì dùng token/app
+# khác nhau (Page token thay vì Ad Account token; app TikTok "Login Kit +
+# Content Posting API" thay vì "Marketing API").
+# ------------------------------------------------------------------------
+@dataclass(frozen=True)
+class FacebookPageConfig:
+    page_id: str = field(default_factory=lambda: _get_env("FB_PAGE_ID", required=True))
+    page_access_token: str = field(default_factory=lambda: _get_env("FB_PAGE_ACCESS_TOKEN", required=True))
+    api_version: str = field(default_factory=lambda: _get_env("META_API_VERSION", "v21.0"))
+
+
+@dataclass(frozen=True)
+class InstagramConfig:
+    ig_business_account_id: str = field(default_factory=lambda: _get_env("IG_BUSINESS_ACCOUNT_ID", required=True))
+    # Instagram Graph API dùng chung access token với Facebook Page (Page đã
+    # link với tài khoản Instagram Professional) — xem HUONG_DAN_SU_DUNG.md.
+    page_access_token: str = field(default_factory=lambda: _get_env("FB_PAGE_ACCESS_TOKEN", required=True))
+    api_version: str = field(default_factory=lambda: _get_env("META_API_VERSION", "v21.0"))
+
+
+@dataclass(frozen=True)
+class TikTokContentConfig:
+    """App 'TikTok Login Kit + Content Posting API' — KHÁC với TikTokConfig
+    (TikTok Business/Marketing API) dùng cho Ads ở platforms/tiktok_ads.py."""
+
+    access_token: str = field(default_factory=lambda: _get_env("TIKTOK_CONTENT_ACCESS_TOKEN", required=True))
+    api_base: str = field(default_factory=lambda: _get_env("TIKTOK_CONTENT_API_BASE", "https://open.tiktokapis.com/v2"))
 
 
 @dataclass(frozen=True)
@@ -97,19 +141,69 @@ class PipelineConfig:
     ad_queue_tab: str = "Ad_Queue"
     ad_registry_tab: str = "Ad_Registry"
     weekly_reports_tab: str = "Weekly_Reports"
+    content_queue_tab: str = "Content_Queue"
+    content_registry_tab: str = "Content_Registry"
 
 
-@dataclass(frozen=True)
 class AppConfig:
-    google_workspace: GoogleWorkspaceConfig = field(default_factory=GoogleWorkspaceConfig)
-    llm: LLMConfig = field(default_factory=LLMConfig)
-    meta: MetaConfig = field(default_factory=MetaConfig)
-    tiktok: TikTokConfig = field(default_factory=TikTokConfig)
-    google_ads: GoogleAdsConfig = field(default_factory=GoogleAdsConfig)
-    notifier: NotifierConfig = field(default_factory=NotifierConfig)
-    pipeline: PipelineConfig = field(default_factory=PipelineConfig)
+    """
+    Gom toàn bộ config, nhưng CHỈ validate/đọc env của 1 nhóm (ví dụ Meta Ads,
+    hay Facebook Page organic) khi thực sự truy cập (`cfg.meta`, `cfg.facebook_page`...).
+
+    Lý do dùng lazy property (cached_property) thay vì dataclass field thường:
+    mỗi job (deploy_ads / weekly_report / run_organic_post) chỉ cần 1 tập con
+    các biến môi trường. Nếu validate toàn bộ ngay khi gọi load_config(), job
+    đăng organic sẽ bị raise lỗi "thiếu biến môi trường" của Meta/TikTok/Google
+    Ads dù không hề dùng tới — mỗi sub-config chỉ bị validate đúng lúc cần.
+    """
+
+    @cached_property
+    def google_workspace(self) -> GoogleWorkspaceConfig:
+        return GoogleWorkspaceConfig()
+
+    @cached_property
+    def llm(self) -> LLMConfig:
+        return LLMConfig()
+
+    @cached_property
+    def meta(self) -> MetaConfig:
+        return MetaConfig()
+
+    @cached_property
+    def tiktok(self) -> TikTokConfig:
+        return TikTokConfig()
+
+    @cached_property
+    def google_ads(self) -> GoogleAdsConfig:
+        return GoogleAdsConfig()
+
+    @cached_property
+    def youtube(self) -> YouTubeConfig:
+        return YouTubeConfig()
+
+    @cached_property
+    def facebook_page(self) -> FacebookPageConfig:
+        return FacebookPageConfig()
+
+    @cached_property
+    def instagram(self) -> InstagramConfig:
+        return InstagramConfig()
+
+    @cached_property
+    def tiktok_content(self) -> TikTokContentConfig:
+        return TikTokContentConfig()
+
+    @cached_property
+    def notifier(self) -> NotifierConfig:
+        return NotifierConfig()
+
+    @cached_property
+    def pipeline(self) -> PipelineConfig:
+        return PipelineConfig()
 
 
 def load_config() -> AppConfig:
-    """Entry point duy nhất để nạp toàn bộ config. Gọi 1 lần ở đầu mỗi job."""
+    """Entry point duy nhất để nạp config. Gọi 1 lần ở đầu mỗi job — việc đọc/
+    validate biến môi trường của từng nhóm (meta/tiktok/google_ads/facebook_page/...)
+    chỉ xảy ra khi job thực sự truy cập đến nhóm đó."""
     return AppConfig()

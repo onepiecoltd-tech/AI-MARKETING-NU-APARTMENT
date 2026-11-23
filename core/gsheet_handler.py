@@ -61,6 +61,34 @@ WEEKLY_REPORT_COLUMNS = [
     "ROAS",
 ]
 
+# Content_Queue: đăng ORGANIC (không qua Ads) lên chính kênh/trang/channel của
+# mình. Khác Ad_Queue: KHÔNG có Campaign_IDs/Initial_Status (không có khái
+# niệm AdSet/AdGroup/budget) — chỉ có 1 Page/Channel/IG Account cố định lấy từ
+# config (FB_PAGE_ID, IG_BUSINESS_ACCOUNT_ID, YouTube channel qua OAuth token).
+CONTENT_QUEUE_COLUMNS = [
+    "Row_ID",
+    "Topic_Group",
+    "Topic_Prompt",
+    "Media_Drive_URL",
+    "Media_Type",
+    "Platforms",
+    "Caption_Override",
+    "Visibility",
+    "Pipeline_Status",
+    "Posted_URLs",
+    "Error_Log",
+]
+
+CONTENT_REGISTRY_COLUMNS = [
+    "Posted_Date",
+    "Row_ID",
+    "Topic_Group",
+    "Platform",
+    "Post_ID",
+    "Post_URL",
+    "Caption",
+]
+
 PIPELINE_STATUS_READY = "READY"
 PIPELINE_STATUS_PROCESSING = "PROCESSING"
 PIPELINE_STATUS_DONE = "DONE"
@@ -84,12 +112,38 @@ class AdQueueRow:
     error_log: str = ""
 
 
+@dataclass
+class ContentQueueRow:
+    row_index: int
+    row_id: str
+    topic_group: str
+    topic_prompt: str
+    media_drive_url: str
+    media_type: str
+    platforms: List[str]
+    caption_override: str
+    visibility: str
+    pipeline_status: str
+    posted_urls: Dict[str, str] = field(default_factory=dict)
+    error_log: str = ""
+
+
 class GoogleSheetHandler:
-    def __init__(self, cfg: GoogleWorkspaceConfig, ad_queue_tab: str, ad_registry_tab: str, weekly_reports_tab: str):
+    def __init__(
+        self,
+        cfg: GoogleWorkspaceConfig,
+        ad_queue_tab: str,
+        ad_registry_tab: str,
+        weekly_reports_tab: str,
+        content_queue_tab: str = "Content_Queue",
+        content_registry_tab: str = "Content_Registry",
+    ):
         self._cfg = cfg
         self.ad_queue_tab = ad_queue_tab
         self.ad_registry_tab = ad_registry_tab
         self.weekly_reports_tab = weekly_reports_tab
+        self.content_queue_tab = content_queue_tab
+        self.content_registry_tab = content_registry_tab
         creds = _build_credentials(cfg.service_account_json)
         self._service = build("sheets", "v4", credentials=creds, cache_discovery=False)
 
@@ -207,6 +261,60 @@ class GoogleSheetHandler:
         values = [[r.get(col, "") for col in WEEKLY_REPORT_COLUMNS] for r in rows]
         self._append_values(f"{self.weekly_reports_tab}!A:K", values)
         logger.info("Đã ghi %d dòng vào Weekly_Reports.", len(rows))
+
+    # -------------------------------------------------------- Content_Queue
+    def read_ready_content_rows(self) -> List[ContentQueueRow]:
+        """Đọc Content_Queue, trả về các dòng Pipeline_Status == READY."""
+        raw = self._get_values(f"{self.content_queue_tab}!A2:K")
+        rows: List[ContentQueueRow] = []
+        for idx, raw_row in enumerate(raw, start=2):
+            padded = raw_row + [""] * (len(CONTENT_QUEUE_COLUMNS) - len(raw_row))
+            record = dict(zip(CONTENT_QUEUE_COLUMNS, padded))
+            if record.get("Pipeline_Status", "").strip().upper() != PIPELINE_STATUS_READY:
+                continue
+            platforms = [p.strip().upper() for p in record.get("Platforms", "").split(",") if p.strip()]
+            rows.append(
+                ContentQueueRow(
+                    row_index=idx,
+                    row_id=record.get("Row_ID", "").strip(),
+                    topic_group=record.get("Topic_Group", "").strip(),
+                    topic_prompt=record.get("Topic_Prompt", "").strip(),
+                    media_drive_url=record.get("Media_Drive_URL", "").strip(),
+                    media_type=record.get("Media_Type", "").strip().upper(),
+                    platforms=platforms,
+                    caption_override=record.get("Caption_Override", "").strip(),
+                    visibility=record.get("Visibility", "PUBLIC").strip().upper() or "PUBLIC",
+                    pipeline_status=record.get("Pipeline_Status", "").strip().upper(),
+                    posted_urls=self._safe_json_loads(record.get("Posted_URLs", "")),
+                    error_log=record.get("Error_Log", ""),
+                )
+            )
+        logger.info("Tìm thấy %d dòng READY trong Content_Queue.", len(rows))
+        return rows
+
+    def set_content_status(self, row: ContentQueueRow, status: str, error_log: str = "") -> None:
+        """Cập nhật Pipeline_Status (I) + Error_Log (K), giữ nguyên Posted_URLs (J)."""
+        self._update_values(
+            f"{self.content_queue_tab}!I{row.row_index}:K{row.row_index}",
+            [[status, _json_dumps(row.posted_urls), error_log]],
+        )
+
+    def set_content_posted_urls(
+        self, row: ContentQueueRow, posted_urls: Dict[str, str], status: str, error_log: str = ""
+    ) -> None:
+        """Ghi JSON Posted_URLs (link bài đăng thật trên từng nền tảng) + status + error log."""
+        self._update_values(
+            f"{self.content_queue_tab}!I{row.row_index}:K{row.row_index}",
+            [[status, _json_dumps(posted_urls), error_log]],
+        )
+
+    # ----------------------------------------------------- Content_Registry
+    def append_content_registry_entries(self, entries: List[Dict[str, Any]]) -> None:
+        if not entries:
+            return
+        values = [[e.get(col, "") for col in CONTENT_REGISTRY_COLUMNS] for e in entries]
+        self._append_values(f"{self.content_registry_tab}!A:G", values)
+        logger.info("Đã ghi %d dòng vào Content_Registry.", len(entries))
 
 
 def _json_dumps(data: Dict[str, Any]) -> str:

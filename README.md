@@ -1,33 +1,43 @@
-# Omni-Channel Auto Ads & Weekly Reporter (Meta, TikTok, Google Ads)
+# Omni-Channel Auto Ads & Weekly Reporter (Meta, TikTok, Google Ads) + Organic Poster
 
-Hệ thống tự động hóa lên chiến dịch quảng cáo từ Media + Prompt theo nhóm chủ đề,
-và tổng hợp báo cáo hiệu suất hàng tuần đa nền tảng. Vận hành hoàn toàn bằng
-**Python + GitHub Actions + Google Workspace** — không tốn chi phí server.
+Hệ thống gồm **2 luồng song song**: (1) tự động hóa lên chiến dịch quảng cáo từ
+Media + Prompt theo nhóm chủ đề, tổng hợp báo cáo hiệu suất hàng tuần; (2) tự
+động **đăng organic** (không qua Ads) lên chính kênh YouTube/Facebook/Instagram/
+TikTok của mình. Vận hành hoàn toàn bằng **Python + GitHub Actions + Google
+Workspace** — không tốn chi phí server.
 
 ## 1. Cấu trúc thư mục
 
 ```text
-auto-ads-pipeline/
+ai-marketing-nu-apartment/
 ├── .github/workflows/
 │   ├── deploy_ads.yml        # Cron 30 phút/lần — quét Ad_Queue và lên Ad
-│   └── weekly_report.yml     # Cron 08:00 Thứ 2 hàng tuần (UTC+7) — báo cáo
+│   ├── weekly_report.yml     # Cron 08:00 Thứ 2 hàng tuần (UTC+7) — báo cáo Ads
+│   └── organic_post.yml      # Cron mỗi giờ — quét Content_Queue, đăng organic
 ├── config/
-│   ├── settings.py           # Load env vars + cấu hình mặc định
-│   └── prompts.py            # System prompt chuẩn hóa JSON schema cho LLM
+│   ├── settings.py           # Load env vars + cấu hình mặc định (lazy — chỉ validate nhóm thực dùng)
+│   └── prompts.py            # System prompt JSON schema cho LLM (Ad copy + Organic caption)
 ├── core/
 │   ├── gdrive_handler.py     # Tải/dọn media tạm từ Google Drive
-│   ├── gsheet_handler.py     # Đọc/ghi 3 tab: Ad_Queue, Ad_Registry, Weekly_Reports
-│   ├── llm_generator.py      # Sinh ad copy (OpenAI/Gemini) + gắn UTM + đặt tên Ad
+│   ├── gsheet_handler.py     # Đọc/ghi 5 tab: Ad_Queue/Ad_Registry/Weekly_Reports + Content_Queue/Content_Registry
+│   ├── llm_generator.py      # Sinh ad copy / organic caption (OpenAI/Gemini) + UTM + đặt tên Ad
 │   ├── notifier.py           # Gửi cảnh báo lỗi + báo cáo qua Telegram
 │   └── retry.py              # Decorator retry + exponential backoff dùng chung
 ├── platforms/
-│   ├── base_ads.py           # Abstract Base Class cho mọi connector
-│   ├── meta_ads.py           # Meta Marketing API (facebook-business SDK)
-│   ├── tiktok_ads.py         # TikTok Business API (REST + requests)
-│   └── google_ads.py         # Google Ads API (google-ads SDK) + YouTube upload
+│   ├── base_ads.py           # Abstract Base Class cho connector Ads
+│   ├── meta_ads.py           # Meta Marketing API (Ads)
+│   ├── tiktok_ads.py         # TikTok Business API (Ads)
+│   ├── google_ads.py         # Google Ads API + YouTube upload (asset cho Ads)
+│   └── organic/              # Connector đăng ORGANIC — không qua Ads
+│       ├── base_organic.py
+│       ├── youtube_organic.py    # YouTube Data API v3 (videos.insert, public/unlisted/private)
+│       ├── facebook_organic.py   # Facebook Graph API (/photos, /videos lên Page)
+│       ├── instagram_organic.py  # Instagram Graph API Content Publishing (cần media_url công khai)
+│       └── tiktok_organic.py     # TikTok Content Posting API (Direct Post, FILE_UPLOAD)
 ├── jobs/
 │   ├── run_deploy_ads.py     # Entrypoint workflow lên Ad
-│   └── run_weekly_report.py  # Entrypoint workflow báo cáo tuần
+│   ├── run_weekly_report.py  # Entrypoint workflow báo cáo tuần
+│   └── run_organic_post.py   # Entrypoint workflow đăng organic
 ├── .env.example
 ├── requirements.txt
 └── README.md
@@ -35,13 +45,11 @@ auto-ads-pipeline/
 
 ## 2. Google Sheets Schema
 
-Tạo 1 Google Sheet gồm 3 tab với đúng tên và thứ tự cột sau (xem chi tiết từng
-cột trong `core/gsheet_handler.py` — `AD_QUEUE_COLUMNS`, `AD_REGISTRY_COLUMNS`,
-`WEEKLY_REPORT_COLUMNS`):
+Tạo 1 Google Sheet gồm 5 tab (xem chi tiết từng cột trong `core/gsheet_handler.py`):
 
-- **`Ad_Queue`**: hàng đợi lên Ad — nhập dòng mới với `Pipeline_Status = READY`.
-- **`Ad_Registry`**: hệ thống tự ghi sau khi tạo Ad thành công — đối soát & dùng cho báo cáo.
-- **`Weekly_Reports`**: lịch sử snapshot số liệu mỗi tuần.
+- **`Ad_Queue`** / **`Ad_Registry`** / **`Weekly_Reports`**: luồng Ads (xem `HUONG_DAN_SU_DUNG.md` mục 2).
+- **`Content_Queue`**: hàng đợi đăng organic — nhập dòng mới với `Pipeline_Status = READY`, không cần Campaign_IDs/budget.
+- **`Content_Registry`**: hệ thống tự ghi link bài đã đăng (`Post_URL`) sau khi thành công.
 
 ## 3. Cài đặt
 
@@ -83,3 +91,12 @@ python -m jobs.run_weekly_report
 - **ROAS**: Ads API không trả về revenue trực tiếp nên `ROAS` mặc định là 0 trong
   `Weekly_Reports` — nối thêm dữ liệu đơn hàng thực tế (ví dụ từ hệ thống CRM/đơn hàng)
   nếu cần tính ROAS chính xác.
+- **Organic — Instagram**: Graph API chỉ nhận `image_url`/`video_url` công khai, không
+  nhận upload file nhị phân — `Media_Drive_URL` trong `Content_Queue` phải được share
+  "Anyone with the link", không chỉ share riêng cho Service Account.
+- **Organic — TikTok**: dùng app "Login Kit + Content Posting API" **riêng biệt**,
+  khác hoàn toàn app TikTok Business/Marketing API dùng cho Ads. Trước khi được
+  TikTok audit, chỉ đăng được ở chế độ riêng tư (`SELF_ONLY`).
+- **Organic — YouTube/TikTok**: chỉ hỗ trợ `Media_Type = VIDEO` (không hỗ trợ IMAGE).
+- Chi tiết đăng ký API + hướng dẫn dùng hàng ngày cho luồng organic: xem mục 6b
+  trong `HUONG_DAN_SU_DUNG.md`.

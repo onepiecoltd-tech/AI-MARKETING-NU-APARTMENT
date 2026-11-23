@@ -153,6 +153,69 @@ TELEGRAM_CHAT_ID
 
 ---
 
+## 6b. Đăng ORGANIC lên YouTube/Facebook/Instagram/TikTok (không qua Ads)
+
+Đây là luồng **thứ 2**, hoàn toàn độc lập với Ads — đăng thẳng lên kênh/trang/account
+của chính anh, không tốn tiền quảng cáo. Chạy bởi `jobs/run_organic_post.py` +
+workflow `.github/workflows/organic_post.yml` (cron mỗi giờ).
+
+### 6b.1. Tạo thêm 2 tab trong Google Sheet
+
+**Tab `Content_Queue`** — hàng đợi đăng organic, header dòng 1 với 11 cột:
+
+| Row_ID | Topic_Group | Topic_Prompt | Media_Drive_URL | Media_Type | Platforms | Caption_Override | Visibility | Pipeline_Status | Posted_URLs | Error_Log |
+|---|---|---|---|---|---|---|---|---|---|---|
+| C_001 | Review_SP | Giới thiệu tính năng mới của sản phẩm X, giọng vui vẻ | https://drive.google.com/... | VIDEO | YOUTUBE, FACEBOOK | | PUBLIC | READY | | |
+
+- `Caption_Override`: để trống nếu muốn LLM tự viết caption; điền sẵn nội dung nếu muốn dùng nguyên văn (bỏ qua LLM) cho dòng đó.
+- `Visibility`: `PUBLIC` / `UNLISTED` / `PRIVATE` — chủ yếu áp dụng cho YouTube; với TikTok, `PUBLIC` sẽ tự chuyển thành riêng tư nếu app chưa được TikTok audit (xem 6b.4).
+- **Khác `Ad_Queue`**: không có `Campaign_IDs`/`Initial_Status` — vì đăng thẳng lên 1 Page/Channel/Account cố định đã khai trong Secrets, không có khái niệm AdSet/budget.
+
+**Tab `Content_Registry`** — hệ thống tự ghi, chỉ cần tạo header dòng 1:
+```
+Posted_Date | Row_ID | Topic_Group | Platform | Post_ID | Post_URL | Caption
+```
+
+### 6b.2. Đăng ký API cho từng nền tảng
+
+**YouTube**: dùng lại OAuth Client ID/Secret đã tạo ở mục 3.3 (Google Ads), chỉ cần
+đảm bảo `YOUTUBE_REFRESH_TOKEN` có scope `youtube.upload`.
+
+**Facebook Page**:
+1. Trong app Meta for Developers đã tạo ở mục 3.1, thêm quyền `pages_manage_posts`, `pages_read_engagement`.
+2. Lấy **Page Access Token** dài hạn cho Page cần đăng (khác với System User token dùng cho Ads).
+3. Nếu chỉ đăng lên Page của chính mình (không public app cho người khác), có thể dùng ở chế độ Development, chưa cần App Review đầy đủ.
+
+**Instagram**:
+1. Đảm bảo Instagram đã chuyển sang **Professional account** (Business/Creator) và đã **liên kết với Facebook Page** ở trên.
+2. Lấy `IG_BUSINESS_ACCOUNT_ID` qua Graph API Explorer: `GET /{page-id}?fields=instagram_business_account`.
+3. **Quan trọng**: mở quyền chia sẻ file/folder trên Google Drive thành **"Anyone with the link"** (không chỉ share cho email Service Account) — vì Instagram tự tải media qua URL công khai, không nhận upload file trực tiếp.
+4. Để chạy production (không chỉ test), app cần qua Meta App Review cho quyền `instagram_business_content_publish`.
+
+**TikTok Content Posting API** (đăng ký app **riêng**, khác app TikTok Ads ở mục 3.2):
+1. Vào TikTok for Developers → tạo app mới → thêm sản phẩm **Content Posting API** (Login Kit).
+2. Lấy access token qua OAuth với scope `video.publish`.
+3. **Trước khi được TikTok audit**: chỉ đăng được ở chế độ riêng tư (`SELF_ONLY`), tối đa 5 tài khoản/24h — pipeline tự phát hiện và tự chuyển sang riêng tư nếu chưa có quyền public, kèm log cảnh báo.
+4. Muốn đăng công khai: nộp app cho TikTok audit (TikTok tự xét duyệt, không phải Anthropic/Claude).
+
+### 6b.3. Cách dùng hàng ngày
+
+1. Thêm 1 dòng vào `Content_Queue` với `Pipeline_Status = READY`, chỉ liệt kê `Platforms` thực sự muốn đăng.
+2. Chờ tối đa 1 giờ, hoặc vào **Actions → Organic Post → Run workflow** để đăng ngay.
+3. Theo dõi `Pipeline_Status` và `Posted_URLs` (JSON link bài đăng thật trên từng nền tảng).
+4. Xem lịch sử đã đăng trong tab `Content_Registry`.
+
+### 6b.4. Giới hạn cần biết
+
+| Nền tảng | Hỗ trợ | Giới hạn |
+|---|---|---|
+| YouTube | IMAGE ❌ / VIDEO ✅ | Quota free ~10.000 unit/ngày |
+| Facebook | IMAGE ✅ / VIDEO ✅ | Theo rate limit chuẩn của Page |
+| Instagram | IMAGE ✅ / VIDEO ✅ (đăng dạng Reels) | Tối đa 50 bài/24h; cần Drive share public |
+| TikTok | IMAGE ❌ / VIDEO ✅ | Riêng tư cho đến khi app được TikTok audit |
+
+---
+
 ## 7. Lệnh Git để đẩy code lên GitHub
 
 Nếu bạn tải code về máy và muốn tự push (thay vì để Claude push), chạy:
@@ -181,6 +244,7 @@ pip install -r requirements.txt
 cp .env.example .env             # rồi điền giá trị thật vào .env
 python -m jobs.run_deploy_ads
 python -m jobs.run_weekly_report
+python -m jobs.run_organic_post     # chỉ cần Secrets ở mục 6b, không cần Secrets Ads
 ```
 
 ---
@@ -196,6 +260,9 @@ python -m jobs.run_weekly_report
 | Lỗi 401/403 từ Meta/TikTok/Google | Access Token hết hạn hoặc thiếu quyền | Cấp lại token, đảm bảo đúng scope `ads_management` |
 | `LLM trả về JSON không hợp lệ` | Model trả sai format (hiếm) | Hệ thống tự retry; nếu lặp lại, kiểm tra `LLM_PROVIDER`/model name |
 | Workflow không chạy đúng giờ | GitHub Actions cron có thể trễ vài phút ở giờ cao điểm | Bình thường, không phải lỗi hệ thống — hoặc dùng Run workflow thủ công |
+| Instagram lỗi không tải được media | Drive file chưa share "Anyone with the link" | Mở quyền share file/folder Drive thành công khai (xem mục 6b.2) |
+| TikTok chỉ đăng được riêng tư, không thấy công khai | App chưa qua TikTok audit | Chờ TikTok duyệt audit, hoặc tạm chấp nhận đăng riêng tư để test |
+| `Media_Type không hợp lệ cho YouTube/TikTok` | Content_Queue đặt `Media_Type = IMAGE` cho YouTube/TikTok | 2 nền tảng này chỉ nhận VIDEO ở module organic hiện tại |
 
 ---
 
